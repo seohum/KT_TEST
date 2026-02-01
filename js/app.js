@@ -52,31 +52,36 @@ function normalizePolicy(){
 }
 
 function buildGroups(){
-  const raw = uniq([
-    ...POLICY.wired_table.map(r=>r.group),
-    ...POLICY.uit_table.map(r=>r.group)
-  ]);
-  const groups = uniq(
-    raw
-      .filter(g=>g && !String(g).includes("정책") && String(g)!=="구분")
-      .map(g=>canonGroupForUI(g))
-  );
+  // 고정 순서(요청사항): 인터넷 단독, I+T, M+I, U+I, M+I+T, U+I+T
+  // 실제 표의 내부 값은 'I 단품'으로 매칭
+  const ORDER = [
+    { key: "I 단품", label: "인터넷 단독" },
+    { key: "I+T", label: "I+T" },
+    { key: "M+I", label: "M+I" },
+    { key: "U+I", label: "U+I" },
+    { key: "M+I+T", label: "M+I+T" },
+    { key: "U+I+T", label: "U+I+T" },
+  ];
 
+  const exists = new Set((POLICY.wired_table || []).map(r => normGroup(r.group)));
   const wrap = $("groupBtns");
-  wrap.innerHTML="";
-  groups.forEach((g,idx)=>{
-    const b=document.createElement("button");
-    b.className="btn"+(idx===0?" on":"");
-    b.textContent=g;
-    b.dataset.g=g;
-    b.onclick=()=>{
-      [...wrap.querySelectorAll(".btn")].forEach(x=>x.classList.remove("on"));
+  wrap.innerHTML = "";
+
+  const btns = ORDER.filter(x => exists.has(normGroup(x.key)));
+  btns.forEach((x, idx) => {
+    const b = document.createElement("button");
+    b.className = "btn" + (idx === 0 ? " on" : "");
+    b.textContent = x.label;
+    b.dataset.g = x.key; // 내부 매칭 값
+    b.onclick = () => {
+      [...wrap.querySelectorAll(".btn")].forEach(t => t.classList.remove("on"));
       b.classList.add("on");
       refreshSelectors();
     };
     wrap.appendChild(b);
   });
 }
+
 
 function currentGroup(){
   const b = document.querySelector("#groupBtns .btn.on");
@@ -85,51 +90,61 @@ function currentGroup(){
 
 function refreshSelectors(){
   const g = currentGroup();
-  const isUIT = POLICY.uit_table.some(r=>r.group===g);
-  $("mobileTierRow").style.display = isUIT ? "" : "none";
+  const gNorm = normGroup(g);
 
-  const table = isUIT ? POLICY.uit_table.filter(r=>r.group===normGroup(g)) : POLICY.wired_table.filter(r=>r.group===normGroup(g));
+  // 유선만 사용 (무선/UIT 미사용)
+  $("mobileTierRow").style.display = "none";
 
-  const internetList = uniq(table.map(r=>r.internet));
-  $("internetSel").innerHTML = internetList.map(v=>`<option value="${v}">${v}</option>`).join("");
+  const table = (POLICY.wired_table || []).filter(r => normGroup(r.group) === gNorm);
 
-  const tvList = uniq(table.map(r=>r.tv));
-  // tv가 아예 없는 구분이면 '없음' 고정
-  if(tvList.length===0){
+  // 인터넷 상품 리스트
+  const internetList = uniq(table.map(r => r.internet));
+  $("internetSel").innerHTML = internetList.map(v => `<option value="${v}">${v}</option>`).join("");
+
+  // TV 포함 그룹 여부 (T가 들어간 구성만 TV/지니3 옵션 노출)
+  const hasTV = ["I+T","M+I+T","U+I+T"].includes(gNorm);
+
+  // TV Row show/hide
+  const tvRow = $("tvSel").closest(".row");
+  tvRow.style.display = hasTV ? "" : "none";
+
+  // TV 셀렉트 세팅
+  if(!hasTV){
     $("tvSel").innerHTML = `<option value="">없음</option>`;
     $("tvSel").disabled = true;
+    $("tvSel").value = "";
   }else{
+    const tvList = uniq(table.map(r => r.tv));
     $("tvSel").disabled = false;
-    $("tvSel").innerHTML = [`<option value="">없음</option>`, ...tvList.map(v=>`<option value="${v}">${v}</option>`)].join("");
+    $("tvSel").innerHTML = [`<option value="">없음</option>`, ...tvList.map(v => `<option value="${v}">${v}</option>`)].join("");
   }
 
-  if(isUIT){
-    const tiers = uniq(table.map(r=>r.mobile_tier));
-    $("mobileTierSel").innerHTML = tiers.map(v=>`<option value="${v}">${v}</option>`).join("");
-  }
+  // 옵션: 원스톱은 항상, 지니3는 TV 구성일 때만
+  const genieLabel = $("optGenie3").closest("label");
+  genieLabel.style.display = hasTV ? "" : "none";
+  $("optGenie3").disabled = !hasTV;
 
   // reset options
-  $("optOnestop").checked=false;
-  $("optGenie3").checked=false;
+  $("optOnestop").checked = false;
+  $("optGenie3").checked = false;
 
   calc();
 }
 
-function findRow(){
-  const g=currentGroup();
-  const internet=$("internetSel").value;
-  const tv=$("tvSel").disabled ? null : ($("tvSel").value || null);
 
-  const isUIT = POLICY.uit_table.some(r=>r.group===g);
-  if(isUIT){
-    const tier=$("mobileTierSel").value;
-    const rows = POLICY.uit_table.filter(r=>r.group===normGroup(g) && eqOrAny(r.internet, internet) && eqTv(r.tv, tv) && eqOrAny(r.mobile_tier, tier));
-    return rows[0] || null;
-  }else{
-    const rows = POLICY.wired_table.filter(r=>r.group===normGroup(g) && eqOrAny(r.internet, internet) && eqTv(r.tv, tv));
-    return rows[0] || null;
-  }
+function findRow(){
+  const g = currentGroup();
+  const internet = $("internetSel").value;
+  const tv = $("tvSel").disabled ? null : ($("tvSel").value || null);
+
+  const rows = (POLICY.wired_table || []).filter(r =>
+    normGroup(r.group) === normGroup(g) &&
+    eqOrAny(r.internet, internet) &&
+    eqTv(r.tv, tv)
+  );
+  return rows[0] || null;
 }
+
 
 function calc(){
   const row=findRow();
@@ -203,25 +218,3 @@ buildGroups();
 }
 
 init();
-
-
-// === Policy select inside condition ===
-document.addEventListener('DOMContentLoaded', function(){
-  const wiredBtn = document.getElementById('policy-wired');
-  const wirelessBtn = document.getElementById('policy-wireless');
-  const wirelessUI = document.getElementById('wireless-ui');
-
-  if(!wiredBtn || !wirelessBtn || !wirelessUI) return;
-
-  wiredBtn.onclick = function(){
-    wiredBtn.classList.add('active');
-    wirelessBtn.classList.remove('active');
-    wirelessUI.style.display = 'none';
-  };
-
-  wirelessBtn.onclick = function(){
-    wirelessBtn.classList.add('active');
-    wiredBtn.classList.remove('active');
-    wirelessUI.style.display = 'block';
-  };
-});
