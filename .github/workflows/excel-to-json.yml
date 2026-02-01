@@ -1,56 +1,43 @@
-name: Excel to JSON (Policy Auto Build)
+name: Excel to Wired Policy JSON
 
 on:
   push:
     paths:
-      - 'data/**/*.xlsx'
+      - '**/policy.xlsx'
 
 jobs:
-  build-json:
+  build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install dependencies
-        run: |
-          pip install pandas openpyxl
+      - name: Install deps
+        run: pip install pandas openpyxl
 
       - name: Convert Excel to JSON
         run: |
           python << 'EOF'
-          import pandas as pd
-          import json
-          import os
+          import pandas as pd, json, os
 
-          targets = [
-              ("data/wired/policy.xlsx", "data/wired/policy.json"),
-              ("data/wireless/policy.xlsx", "data/wireless/policy.json")
-          ]
+          excel_path = 'data/wired/policy.xlsx'
+          json_path = 'data/wired/policy.json'
 
-          for excel_path, json_path in targets:
-              if not os.path.exists(excel_path):
-                  continue
+          df = pd.read_excel(excel_path)
+          df = df[['KEY','정책금액(만원)']].dropna()
 
-              df = pd.read_excel(excel_path)
-              records = df.to_dict(orient="records")
-
-              with open(json_path, "w", encoding="utf-8") as f:
-                  json.dump(records, f, ensure_ascii=False, indent=2)
-
-              print(f"Converted {excel_path} -> {json_path}")
+          with open(json_path,'w',encoding='utf-8') as f:
+              json.dump(df.to_dict(orient='records'), f, ensure_ascii=False, indent=2)
           EOF
 
-      - name: Commit JSON files
+      - name: Commit JSON if changed
         run: |
-          git config user.name "policy-bot"
-          git config user.email "policy-bot@github.com"
-          git add data/**/policy.json
-          git commit -m "auto: update policy json from excel" || echo "No changes"
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add data/wired/policy.json
+          git diff --cached --quiet || git commit -m "auto: update wired policy json"
           git push
