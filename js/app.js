@@ -62,6 +62,15 @@ function buildGroups(){
       .map(g=>canonGroupForUI(g))
   );
 
+  // 고정 순서 적용 (직원용 UX)
+  const orderMap = new Map(["I \ub2e8\ud488","I+T","M+I","U+I","M+I+T","U+I+T"].map((v,i)=>[v,i]));
+  groups.sort((a,b)=>{
+    const ia = orderMap.has(a) ? orderMap.get(a) : 999;
+    const ib = orderMap.has(b) ? orderMap.get(b) : 999;
+    if(ia!==ib) return ia-ib;
+    return String(a).localeCompare(String(b));
+  });
+
   const wrap = $("groupBtns");
   wrap.innerHTML="";
   groups.forEach((g,idx)=>{
@@ -101,6 +110,17 @@ function refreshSelectors(){
   }else{
     $("tvSel").disabled = false;
     $("tvSel").innerHTML = [`<option value="">없음</option>`, ...tvList.map(v=>`<option value="${v}">${v}</option>`)].join("");
+  }
+
+  // TV가 없는 구성이면 지니3 옵션은 선택 불가
+  const tvEnabled = !$("tvSel").disabled;
+  const hasTvSelected = tvEnabled && (($("tvSel").value || "") !== "");
+  // 'TV 없음' 구성(또는 TV 미선택)에서는 지니3 체크 해제 + 비활성
+  if(!hasTvSelected){
+    $("optGenie3").checked = false;
+    $("optGenie3").disabled = true;
+  }else{
+    $("optGenie3").disabled = false;
   }
 
   if(isUIT){
@@ -148,13 +168,26 @@ function calc(){
   $("vBundle").textContent = money(row.bundle_policy);
   $("vU").textContent = money(row.u_policy ?? 0);
 
-  $("vTotal").textContent = money(row.total_no_gift);
-
   const useOnestop = $("optOnestop").checked;
-  const useGenie3 = $("optGenie3").checked;
+  const useGenie3 = $("optGenie3").checked && !$("optGenie3").disabled;
 
-  $("vTotalOnestop").textContent = useOnestop ? money(row.total_with_onestop) : "-";
-  $("vTotalGenie3").textContent = useGenie3 ? money(row.total_with_genie3) : "-";
+  // 옵션별 추가금(사은품 미포함 기준) 계산
+  const baseTotal = Number(row.total_no_gift ?? 0);
+  const addOnestop = (row.total_with_onestop!==null && row.total_with_onestop!==undefined)
+    ? Number(row.total_with_onestop) - baseTotal
+    : 0;
+  const addGenie3 = (row.total_with_genie3!==null && row.total_with_genie3!==undefined)
+    ? Number(row.total_with_genie3) - baseTotal
+    : 0;
+
+  const finalTotal = baseTotal
+    + (useOnestop ? addOnestop : 0)
+    + (useGenie3 ? addGenie3 : 0);
+
+  // 화면 표시
+  $("vTotal").textContent = money(finalTotal);
+  $("vTotalOnestop").textContent = useOnestop ? money(baseTotal + addOnestop) : "-";
+  $("vTotalGenie3").textContent = useGenie3 ? money(baseTotal + addGenie3) : "-";
 
   const parts=[];
   parts.push(`구분: ${row.group}`);
