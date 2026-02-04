@@ -1,21 +1,34 @@
 
 let productCode = null;
+let optionState = {
+  onestop:false,
+  genie3:false
+};
 
 function selectProduct(code){
   productCode = code;
-  updateOptionAvailability();
+  updateOptionUI();
   recalc();
 }
 
-function isTvProduct(code){
+function toggleOneStop(val){
+  optionState.onestop = val;
+  recalc();
+}
+
+function toggleGenie3(val){
+  optionState.genie3 = val;
+  recalc();
+}
+
+function hasTV(code){
   return code && code.endsWith('T');
 }
 
-function updateOptionAvailability(){
+function updateOptionUI(){
   const genie = document.getElementById('genie3');
   if(!genie) return;
-
-  if(!isTvProduct(productCode)){
+  if(!hasTV(productCode)){
     genie.checked = false;
     genie.disabled = true;
   } else {
@@ -23,44 +36,25 @@ function updateOptionAvailability(){
   }
 }
 
-function getOption(tv,onestop,genie3){
-  if(!tv){
-    return onestop ? 'ONESTOP' : 'NONE';
-  }
-  if(genie3 && onestop) return 'GENIE3+ONESTOP';
-  if(genie3) return 'GENIE3';
-  if(onestop) return 'ONESTOP';
-  return 'NONE';
+function buildKey(){
+  if(!productCode) return null;
+  const tv = hasTV(productCode) ? "TV" : "NO_TV";
+  let option = "NONE";
+  if(optionState.onestop && optionState.genie3) option = "GENIE3+ONESTOP";
+  else if(optionState.genie3) option = "GENIE3";
+  else if(optionState.onestop) option = "ONESTOP";
+  return `WIRED|${productCode}|${tv}|${option}`;
 }
 
-function makeWiredKey(){
-  const onestopEl = document.getElementById('onestop');
-  const genieEl = document.getElementById('genie3');
-
-  const onestop = onestopEl ? onestopEl.checked : false;
-  const genie3 = genieEl ? genieEl.checked : false;
-
-  const tv = isTvProduct(productCode);
-  const option = getOption(tv,onestop,genie3);
-  return `WIRED|${productCode}|${tv ? 'TV' : 'NO_TV'}|${option}`;
-}
-
-let wiredPolicies = [];
-fetch('data/wired/policy.json')
-  .then(r=>r.json())
-  .then(d=>wiredPolicies=d);
-
-function getWiredPrice(key){
-  const found = wiredPolicies.find(p=>p.KEY===key);
-  return found ? found['정책금액(만원)'] : 0;
-}
+let policies = [];
+fetch("data/wired/policy.json")
+ .then(r=>r.json())
+ .then(d=>policies=d);
 
 function recalc(){
-  if(!productCode) return;
-  const key = makeWiredKey();
-  const price = getWiredPrice(key);
-  const out = document.getElementById('result-price');
-  if(out){
-    out.innerText = price ? price + ' 만원' : '-';
-  }
+  const key = buildKey();
+  if(!key) return;
+  const row = policies.find(p=>p.KEY===key);
+  document.getElementById("result").innerText =
+    row ? row.price + " 만원" : "-";
 }
